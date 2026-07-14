@@ -40,7 +40,7 @@ class Scanner:
         self._ground_truth: Optional[GroundTruth] = None
         self._network_state = NetworkState()
 
-        self._is_basic = force_basic or not self.capabilities.full_scan_possible
+        self.is_basic = force_basic or not self.capabilities.full_scan_possible
         self._scan_start: float = 0.0
 
     async def scan(self, duration: float = 30.0) -> ScanResult:
@@ -105,7 +105,7 @@ class Scanner:
             ws = WifiScannerWindows(scan_interval=4.0)
             self._capture_sources.append(ws)
 
-        if not self._is_basic:
+        if not self.is_basic:
             self._ground_truth = GroundTruth(timeout=10.0)
 
     def _setup_detectors(self) -> None:
@@ -169,7 +169,7 @@ class Scanner:
 
         promisc_detector = None
         for det in self._detectors:
-            if isinstance(det, PromiscuousDetector) and not self._is_basic:
+            if isinstance(det, PromiscuousDetector) and not self.is_basic:
                 promisc_detector = det
                 break
 
@@ -217,7 +217,7 @@ class Scanner:
             timestamp=time.time(),
         ))
 
-        if self._is_basic:
+        if self.is_basic:
             missing = get_missing_requirements(self.capabilities)
             if missing:
                 findings.append(Finding(
