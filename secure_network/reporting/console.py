@@ -82,7 +82,11 @@ def format_rich(result: ScanResult) -> None:
         from rich.panel import Panel
         from rich.text import Text
         from rich import box
+    except ImportError:
+        print(format_findings(result))
+        return
 
+    try:
         console = Console()
         ns = result.network_state
 
@@ -145,5 +149,5 @@ def format_rich(result: ScanResult) -> None:
         summary.append(f"  |  {result.duration_seconds:.1f}s", style="dim")
         console.print(Panel(summary, border_style="cyan"))
 
-    except ImportError:
+    except Exception:
         print(format_findings(result))
