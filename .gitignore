@@ -31,3 +31,4 @@ htmlcov/
 .env
 .env.local
 ".commandcode/"  
+.commandcode/ 
