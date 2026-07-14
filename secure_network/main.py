@@ -15,6 +15,72 @@ from .reporting.console import format_rich
 from .reporting.export import export, to_json
 
 
+def _create_progress():
+    """Create a Rich progress bar with spinner if available, else a simple callback."""
+    try:
+        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, BarColumn
+        from rich.console import Console
+        console = Console()
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}[/bold blue]"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        )
+        task_id = progress.add_task("Initializing...", total=None)
+        progress.start()
+        return progress, task_id
+    except ImportError:
+        return None, None
+
+
+def _finish_progress(progress, task_id):
+    if progress:
+        progress.update(task_id, description="[bold green]Scan complete![/bold green]", completed=100, total=100)
+        progress.stop()
+
+
+def _run_scan_with_progress(duration: int, basic: bool, output: str):
+    """Run scan with a rich progress display."""
+    progress, task_id = _create_progress()
+
+    def update(msg_type: str, text: str):
+        if progress:
+            progress.update(task_id, description=text)
+        else:
+            click.echo(f"  [{msg_type}] {text}")
+
+    async def _run():
+        scanner = Scanner(force_basic=basic, progress=update)
+
+        if scanner.is_basic and not basic:
+            update("info", "[!] Running BASIC mode — some checks need admin + Npcap")
+
+        result = await scanner.scan(duration=duration)
+
+        _finish_progress(progress, task_id)
+        click.echo()
+        format_rich(result)
+
+        if output:
+            if output == "-":
+                click.echo(to_json(result))
+            else:
+                export(result, output)
+                click.echo(f"\n[*] Results saved to {output}")
+
+        if result.critical_count > 0:
+            sys.exit(1)
+
+    try:
+        asyncio.run(_run())
+    finally:
+        if progress and not progress.finished:
+            progress.stop()
+
+
 @click.group()
 @click.version_option(version=__version__)
 def cli():
@@ -35,29 +101,7 @@ def cli():
               help="Export results to JSON file (use '-' for stdout)")
 def scan(duration: int, basic: bool, output: str):
     """Run a complete network security scan."""
-    async def _run():
-        scanner = Scanner(force_basic=basic)
-
-        if scanner.is_basic and not basic:
-            click.echo("[!] Running in BASIC mode. Some checks need admin + Npcap.")
-            click.echo("    Install Npcap from https://npcap.com and re-run as admin.")
-            click.echo()
-
-        click.echo(f"[*] Scanning your network... (this takes ~{duration}s)")
-        result = await scanner.scan(duration=duration)
-        format_rich(result)
-
-        if output:
-            if output == "-":
-                click.echo(to_json(result))
-            else:
-                export(result, output)
-                click.echo(f"\n[*] Results saved to {output}")
-
-        if result.critical_count > 0:
-            sys.exit(1)
-
-    asyncio.run(_run())
+    _run_scan_with_progress(duration, basic, output)
 
 
 @cli.command()
@@ -65,20 +109,7 @@ def scan(duration: int, basic: bool, output: str):
               help="Export results to JSON file (use '-' for stdout)")
 def quick(output: str):
     """Run a fast 15-second scan for a quick overview."""
-    async def _run():
-        scanner = Scanner()
-        click.echo("[*] Quick scan in progress...")
-        result = await scanner.scan(duration=15)
-        format_rich(result)
-
-        if output:
-            if output == "-":
-                click.echo(to_json(result))
-            else:
-                export(result, output)
-                click.echo(f"\n[*] Results saved to {output}")
-
-    asyncio.run(_run())
+    _run_scan_with_progress(15, False, output)
 
 
 @cli.command()

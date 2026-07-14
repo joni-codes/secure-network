@@ -32,13 +32,15 @@ class Scanner:
     manages the baseline and detection phases, and collects results.
     """
 
-    def __init__(self, force_basic: bool = False):
+    def __init__(self, force_basic: bool = False,
+                 progress: Optional[callable] = None):
         self.force_basic = force_basic
         self.capabilities: ScanCapabilities = detect_capabilities()
         self._capture_sources: List[CaptureSource] = []
         self._detectors: List[BaseDetector] = []
         self._ground_truth: Optional[GroundTruth] = None
         self._network_state = NetworkState()
+        self._progress = progress
 
         self.is_basic = force_basic or not self.capabilities.full_scan_possible
         self._scan_start: float = 0.0
@@ -47,13 +49,21 @@ class Scanner:
         """Run a complete scan and return results."""
         self._scan_start = time.time()
 
+        self._progress and self._progress("discovering", "Discovering network configuration...")
         self._discover_network()
+
+        self._progress and self._progress("setup", "Initializing detectors and capture sources...")
         self._setup_capture()
         self._setup_detectors()
 
+        self._progress and self._progress("capture", "Starting packet capture and WiFi scanning...")
         await self._start_capture()
+
+        self._progress and self._progress("baseline",
+            f"Building baseline ({min(duration * 0.3, 10.0):.0f}s) — learning normal network behavior...")
         await self._run_detection_phase(duration)
 
+        self._progress and self._progress("cleanup", "Stopping capture and collecting results...")
         if self._ground_truth:
             await self._ground_truth.stop()
 
@@ -64,6 +74,8 @@ class Scanner:
 
         detectors_run = [d.name for d in self._detectors]
         detectors_skipped = self._get_skipped_detectors(detectors_run)
+
+        self._progress and self._progress("done", "Scan complete!")
 
         return ScanResult(
             scan_tier="basic" if self.is_basic else "full",
