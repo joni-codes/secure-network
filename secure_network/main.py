@@ -7,6 +7,9 @@ import sys
 import click
 
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from . import __version__
 from .scanner import Scanner
@@ -20,7 +23,7 @@ def _create_progress():
     try:
         from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, BarColumn
         from rich.console import Console
-        console = Console()
+        console = Console(force_terminal=True, force_interactive=False)
         progress = Progress(
             SpinnerColumn(),
             TextColumn("[bold blue]{task.description}[/bold blue]"),
@@ -32,7 +35,7 @@ def _create_progress():
         task_id = progress.add_task("Initializing...", total=None)
         progress.start()
         return progress, task_id
-    except ImportError:
+    except Exception:
         return None, None
 
 
@@ -77,8 +80,11 @@ def _run_scan_with_progress(duration: int, basic: bool, output: str):
     try:
         asyncio.run(_run())
     finally:
-        if progress and not progress.finished:
-            progress.stop()
+        if progress and not getattr(progress, 'finished', True):
+            try:
+                progress.stop()
+            except Exception:
+                pass
 
 
 @click.group()

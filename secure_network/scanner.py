@@ -235,7 +235,7 @@ class Scanner:
                 findings.append(Finding(
                     detector="capability_info",
                     severity=Severity.INFO,
-                    title="Limited Scan Mode — Some Checks Unavailable",
+                    title="Limited Scan Mode - Some Checks Unavailable",
                     detail="Running in basic mode. Missing: " + "; ".join(missing) +
                            ". For a full scan, install Npcap and run as Administrator.",
                     recommendation=Recommendation(

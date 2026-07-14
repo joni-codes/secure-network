@@ -1,6 +1,7 @@
 """Network discovery utilities — gateway, subnet, interface, DNS detection."""
 
 import platform
+import re
 import socket
 import struct
 import subprocess
@@ -9,6 +10,9 @@ from typing import Dict, List, Optional, Tuple
 
 def get_default_interface() -> Optional[str]:
     """Get the default network interface name."""
+    if platform.system() == "Windows":
+        return _get_interface_windows()
+
     try:
         import netifaces
         gateways = netifaces.gateways()
@@ -28,6 +32,37 @@ def get_default_interface() -> Optional[str]:
     except Exception:
         pass
     return None
+
+
+def _get_interface_windows() -> Optional[str]:
+    """Get the friendly name of the active network interface on Windows."""
+    try:
+        result = subprocess.run(
+            ["netsh", "interface", "show", "interface"],
+            capture_output=True, text=True, timeout=10
+        )
+        for line in result.stdout.splitlines():
+            if "Connected" in line:
+                parts = line.split()
+                if len(parts) >= 4:
+                    name = " ".join(parts[3:]).strip()
+                    if name and not name.startswith("{") and not "Loopback" in name:
+                        return name
+    except Exception:
+        pass
+
+    try:
+        import netifaces
+        gateways = netifaces.gateways()
+        default = gateways.get('default', {})
+        if default and netifaces.AF_INET in default:
+            iface_name = default[netifaces.AF_INET][1]
+            if not iface_name.startswith("{"):
+                return iface_name
+    except ImportError:
+        pass
+
+    return "Wi-Fi"
 
 
 def get_gateway_ip() -> Optional[str]:
@@ -123,16 +158,32 @@ def get_local_mac(interface: str = None) -> Optional[str]:
         iface = interface or get_default_interface()
         if not iface:
             return None
+
         addrs = netifaces.ifaddresses(iface)
         link = addrs.get(netifaces.AF_LINK, [])
         if link and 'addr' in link[0]:
             return link[0]['addr'].lower()
-    except ImportError:
+    except (ImportError, ValueError, KeyError):
         pass
-    return _get_mac_from_uuid()
+
+    return _get_mac_windows()
 
 
-def _get_mac_from_uuid() -> Optional[str]:
+def _get_mac_windows() -> Optional[str]:
+    """Get MAC address on Windows via ipconfig."""
+    try:
+        result = subprocess.run(
+            ["ipconfig", "/all"],
+            capture_output=True, text=True, timeout=10
+        )
+        import re
+        matches = re.findall(r"([0-9A-F]{2}[-][0-9A-F]{2}[-][0-9A-F]{2}[-][0-9A-F]{2}[-][0-9A-F]{2}[-][0-9A-F]{2})", result.stdout)
+        for match in matches:
+            if match != "00-00-00-00-00-00":
+                return match.replace("-", ":").lower()
+    except Exception:
+        pass
+
     try:
         from uuid import getnode
         mac = getnode()
@@ -154,13 +205,17 @@ def get_dns_servers() -> List[str]:
 def _get_dns_windows() -> List[str]:
     try:
         result = subprocess.run(
-            ["nslookup", "localhost"],
+            ["ipconfig", "/all"],
             capture_output=True, text=True, timeout=10
         )
-        import re
-        servers = re.findall(
-            r"Address:\s*(\d+\.\d+\.\d+\.\d+)", result.stderr
-        )
+        servers = []
+        for line in result.stdout.splitlines():
+            if "DNS Servers" in line or "DNS Server" in line:
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    val = parts[1].strip()
+                    if val and not val.startswith("fec0") and not val.startswith("::"):
+                        servers.append(val)
         return servers
     except Exception:
         return []

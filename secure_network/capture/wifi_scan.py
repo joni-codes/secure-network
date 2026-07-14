@@ -148,14 +148,14 @@ class WifiScanner(CaptureSource):
                     "signal": 0,
                 })
 
-            elif line.startswith("Signal") and ":" in line:
+            elif line.startswith("Signal") and ":" in line and results:
                 sig_str = line.split(":", 1)[1].strip().rstrip("%")
                 try:
                     results[-1]["signal"] = int(sig_str)
                 except (ValueError, IndexError):
                     pass
 
-            elif line.startswith("Channel") and ":" in line:
+            elif line.startswith("Channel") and ":" in line and results:
                 ch = line.split(":", 1)[1].strip()
                 try:
                     results[-1]["channel"] = int(ch)
@@ -181,41 +181,47 @@ class WifiScannerWindows(WifiScanner):
         loop = asyncio.get_event_loop()
 
         def do_scan():
-            import pywifi
-            wifi = pywifi.PyWiFi()
-            ifaces = wifi.interfaces()
-            if not ifaces:
+            try:
+                import pywifi
+                wifi = pywifi.PyWiFi()
+                ifaces = wifi.interfaces()
+                if not ifaces:
+                    return []
+
+                iface = ifaces[0]
+                iface.scan()
+                time.sleep(3)
+                results = iface.scan_results()
+
+                aps = []
+                for net in results:
+                    aps.append({
+                        "ssid": net.ssid or "<hidden>",
+                        "bssid": net.bssid.lower() if net.bssid else "",
+                        "channel": getattr(net, 'freq', 0) or 0,
+                        "signal": net.signal if hasattr(net, 'signal') else 0,
+                        "security": self._auth_to_str(getattr(net, 'auth', 0) or 0),
+                    })
+                return aps
+            except Exception:
                 return []
-
-            iface = ifaces[0]
-            iface.scan()
-            time.sleep(3)
-            results = iface.scan_results()
-
-            aps = []
-            for net in results:
-                aps.append({
-                    "ssid": net.ssid or "<hidden>",
-                    "bssid": net.bssid.lower() if net.bssid else "",
-                    "channel": getattr(net, 'freq', 0) or 0,
-                    "signal": net.signal if hasattr(net, 'signal') else 0,
-                    "security": self._auth_to_str(getattr(net, 'auth', 0) or 0),
-                })
-            return aps
 
         return await loop.run_in_executor(None, do_scan)
 
     @staticmethod
     def _auth_to_str(auth: int) -> str:
-        from pywifi import const
-        mapping = {
-            const.AUTH_ALG_OPEN: "Open",
-            const.AUTH_ALG_SHARED: "Shared",
-            const.AUTH_ALG_WPA: "WPA",
-            const.AUTH_ALG_WPAPSK: "WPA-PSK",
-            const.AUTH_ALG_WPA2: "WPA2",
-            const.AUTH_ALG_WPA2PSK: "WPA2-PSK",
-            const.AUTH_ALG_WPA3: "WPA3",
-            const.AUTH_ALG_WPA3PSK: "WPA3-PSK",
-        }
-        return mapping.get(auth, "Unknown")
+        try:
+            from pywifi import const
+            mapping = {
+                const.AUTH_ALG_OPEN: "Open",
+                const.AUTH_ALG_SHARED: "Shared",
+                const.AUTH_ALG_WPA: "WPA",
+                const.AUTH_ALG_WPAPSK: "WPA-PSK",
+                const.AUTH_ALG_WPA2: "WPA2",
+                const.AUTH_ALG_WPA2PSK: "WPA2-PSK",
+                const.AUTH_ALG_WPA3: "WPA3",
+                const.AUTH_ALG_WPA3PSK: "WPA3-PSK",
+            }
+            return mapping.get(auth, "Unknown")
+        except ImportError:
+            return "Unknown"
